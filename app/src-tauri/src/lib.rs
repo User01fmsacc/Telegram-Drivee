@@ -62,6 +62,7 @@ pub mod jni_cache;
 pub mod transcode;
 pub mod fmp4_remux;
 pub mod mp4_utils;
+pub mod webdav_server;
 
 
 /// Single source of truth for the Actix streaming server port.
@@ -148,6 +149,7 @@ pub fn restart_api_server(app: &tauri::AppHandle) {
                     .app_data(api_state_data.clone())
                     .app_data(api_state.clone())
                     .configure(api_routes::configure_api)
+                .configure(webdav_server::configure_webdav) 
             })
             .bind(("127.0.0.1", api_port)) {
                 Ok(bound) => {
