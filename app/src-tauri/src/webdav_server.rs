@@ -1,12 +1,11 @@
-use actix_web::{web, HttpRequest, HttpResponse, http};
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use crate::TelegramState;
 use std::sync::Arc;
 
 pub async fn handle_propfind(
-    req: HttpRequest,
     path: web::Path<String>,
     _tg_state: web::Data<Arc<TelegramState>>,
-) -> HttpResponse {
+) -> impl Responder {
     log::info!("[WebDAV] PROPFIND: {}", path.into_inner());
     
     let body = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -23,57 +22,72 @@ pub async fn handle_propfind(
     </D:response>
 </D:multistatus>"#;
 
-    HttpResponse::MultiStatus()
-        .content_type("application/xml")
+    HttpResponse::Ok()
+        .insert_header(("Content-Type", "application/xml"))
+        .status(actix_web::http::StatusCode::MULTI_STATUS)
         .body(body)
 }
 
 pub async fn handle_get(
-    _req: HttpRequest,
     path: web::Path<String>,
-) -> HttpResponse {
+) -> impl Responder {
     log::info!("[WebDAV] GET: {}", path.into_inner());
     HttpResponse::NotFound().finish()
 }
 
 pub async fn handle_put(
-    _req: HttpRequest,
     path: web::Path<String>,
     _payload: web::Bytes,
-) -> HttpResponse {
+) -> impl Responder {
     log::info!("[WebDAV] PUT: {}", path.into_inner());
     HttpResponse::Created().finish()
 }
 
 pub async fn handle_delete(
-    _req: HttpRequest,
     path: web::Path<String>,
-) -> HttpResponse {
+) -> impl Responder {
     log::info!("[WebDAV] DELETE: {}", path.into_inner());
     HttpResponse::NoContent().finish()
 }
 
 pub async fn handle_mkcol(
-    _req: HttpRequest,
     path: web::Path<String>,
-) -> HttpResponse {
+) -> impl Responder {
     log::info!("[WebDAV] MKCOL: {}", path.into_inner());
     HttpResponse::Created().finish()
 }
 
-pub async fn handle_options() -> HttpResponse {
+pub async fn handle_options() -> impl Responder {
     HttpResponse::Ok()
         .insert_header(("Allow", "OPTIONS,GET,PUT,DELETE,MKCOL,PROPFIND"))
         .insert_header(("DAV", "1"))
         .finish()
 }
 
+pub async fn handle_catch_all(
+    method: actix_web::http::Method,
+    path: web::Path<String>,
+) -> impl Responder {
+    let path_str = path.into_inner();
+    log::info!("[WebDAV] {} {}", method, path_str);
+    
+    match method {
+        actix_web::http::Method::GET => HttpResponse::NotFound().finish(),
+        actix_web::http::Method::PUT => HttpResponse::Created().finish(),
+        actix_web::http::Method::DELETE => HttpResponse::NoContent().finish(),
+        _ => HttpResponse::MethodNotAllowed().finish(),
+    }
+}
+
 pub fn configure_webdav(cfg: &mut web::ServiceConfig) {
     cfg
-        .route("/webdav/{path:.*}", web::method(http::Method::PROPFIND).to(handle_propfind))
-        .route("/webdav/{path:.*}", web::method(http::Method::GET).to(handle_get))
-        .route("/webdav/{path:.*}", web::method(http::Method::PUT).to(handle_put))
-        .route("/webdav/{path:.*}", web::method(http::Method::DELETE).to(handle_delete))
-        .route("/webdav/{path:.*}", web::method(http::Method::MKCOL).to(handle_mkcol))
-        .route("/webdav/", web::method(http::Method::OPTIONS).to(handle_options));
+        .route("/webdav/", web::method(actix_web::http::Method::OPTIONS).to(handle_options))
+        .route("/webdav/{path:.*}", web::method(actix_web::http::Method::OPTIONS).to(handle_options))
+        .route("/webdav/", web::get().to(handle_get))
+        .route("/webdav/{path:.*}", web::get().to(handle_get))
+        .route("/webdav/", web::put().to(handle_put))
+        .route("/webdav/{path:.*}", web::put().to(handle_put))
+        .route("/webdav/", web::delete().to(handle_delete))
+        .route("/webdav/{path:.*}", web::delete().to(handle_delete))
+        .default_service(web::route().to(handle_catch_all));
 }
